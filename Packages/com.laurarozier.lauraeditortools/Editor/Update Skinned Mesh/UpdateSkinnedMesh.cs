@@ -1,4 +1,5 @@
 #if UNITY_EDITOR
+using System;
 using UnityEditor;
 using UnityEngine;
 
@@ -6,13 +7,16 @@ namespace LauraEditor.Tools.Editor {
     public class UpdateSkinnedMesh : EditorWindow
     {
         private const string CStatusText_Ready = "Ready...";
-        private const string CStatusText_Incomplete = "Add a target SkinnedMeshRenderer and a root bone to process.";
+        private static readonly string CStatusText_Incomplete = $"To use this tool select the following: {Environment.NewLine}- The target SkinnedMeshRenderer{Environment.NewLine}- The new root bone";
         private const string CStatusText_Processing = "== Processing bones ==";
-        private static readonly string CStatusText_Processing_W_DeletedBones = System.Environment.NewLine + "WARN: Do not delete the old bones before the skinned mesh is processed!";
-        private static readonly string CStatusText_Processing_I_Missing = System.Environment.NewLine + "· {0} missing!";
-        private static readonly string CStatusText_Processing_I_Found = System.Environment.NewLine + "· {0} found!";
-        private static readonly string CStatusText_Processing_I_Done = System.Environment.NewLine + "Done! Missing bones: {0}";
-        private static readonly string CStatusText_Processing_I_NewRoot = System.Environment.NewLine + "· Setting {0} as root bone.";
+        private static readonly string CStatusText_Processing_W_DeletedBones = Environment.NewLine + "WARN: Do not delete the old bones before the skinned mesh is processed!";
+        private static readonly string CStatusText_Processing_I_Missing = Environment.NewLine + "> `{0}` missing!";
+        private static readonly string CStatusText_Processing_I_Found = Environment.NewLine + "> `{0}` found!";
+        private static readonly string CStatusText_Processing_I_Done = Environment.NewLine + "Done! Missing bones: {0}";
+        private static readonly string CStatusText_Processing_I_NewRoot = Environment.NewLine + "> Setting `{0}` as root bone.";
+        private static readonly string CStatusText_Processing_I_NewProbeAnchor = Environment.NewLine + "> Setting `{0}` as Anchor Override.";
+        private static readonly string CStatusText_Processing_I_CheckProbeAnchor = Environment.NewLine + "Be sure to check the Anchor Override property, and update it accordingly";
+        private static GUIStyle ReadOnlyTextArea;
 
         private SkinnedMeshRenderer _TargetSkin;
         private Transform _RootBone;
@@ -22,12 +26,14 @@ namespace LauraEditor.Tools.Editor {
         private bool _OldEnabled = false;
 
         [MenuItem("Tools/LauraRozier/Update Skinned Mesh")]
-        public static void ShowWindow() {
+        public static void ShowWindow() =>
             GetWindow<UpdateSkinnedMesh>(true, "Update Skinned Mesh", true);
-        }
 
         private void OnGUI()
         {
+            ReadOnlyTextArea = EditorStyles.textArea;
+            ReadOnlyTextArea.wordWrap = true;
+
             EditorGUILayout.Space();
             _TargetSkin = EditorGUILayout.ObjectField("Target Mesh", _TargetSkin, typeof(SkinnedMeshRenderer), true) as SkinnedMeshRenderer;
             EditorGUILayout.Space();
@@ -60,6 +66,8 @@ namespace LauraEditor.Tools.Editor {
                     Transform[] existingBones = _RootBone.GetComponentsInChildren<Transform>(_IncludeInactive);
                     int missingBones = 0;
 
+                    Undo.RegisterCompleteObjectUndo(_TargetSkin, "Updated SkinnedMeshRenderer bone assignments");
+
                     for (int i = 0; i < _TargetSkin.bones.Length; i++) {
                         if (_TargetSkin.bones[i] == null) {
                             _CurStatusText += CStatusText_Processing_W_DeletedBones;
@@ -71,10 +79,10 @@ namespace LauraEditor.Tools.Editor {
                         bool found = false;
 
                         foreach (var newBone in existingBones) {
-                            if (newBone.name == rootName)
+                            if (newBone.name.Equals(rootName, StringComparison.InvariantCulture))
                                 newRoot = newBone;
 
-                            if (newBone.name == boneName) {
+                            if (newBone.name.Equals(boneName, StringComparison.InvariantCulture)) {
                                 _CurStatusText += string.Format(CStatusText_Processing_I_Found, newBone.name);
                                 newBones[i] = newBone;
                                 found = true;
@@ -93,6 +101,13 @@ namespace LauraEditor.Tools.Editor {
                     if (newRoot != null) {
                         _CurStatusText += string.Format(CStatusText_Processing_I_NewRoot, rootName);
                         _TargetSkin.rootBone = newRoot;
+
+                        if (_TargetSkin.probeAnchor != null && _TargetSkin.probeAnchor.name.Equals(rootName, StringComparison.InvariantCulture)) {
+                            _CurStatusText += string.Format(CStatusText_Processing_I_NewProbeAnchor, rootName);
+                            _TargetSkin.probeAnchor = newRoot;
+                        } else {
+                            _CurStatusText += CStatusText_Processing_I_CheckProbeAnchor;
+                        }
                     }
                 }
             }
@@ -103,11 +118,10 @@ namespace LauraEditor.Tools.Editor {
             _ScrollPosition = EditorGUILayout.BeginScrollView(_ScrollPosition, true, true);
             {// Update the width on repaint, based on width of the SelectableLabel's rectangle.
                 float pixelWidth = position.width - 19f;
-                float pixelHeight = EditorStyles.textArea.CalcHeight(new GUIContent(_CurStatusText), pixelWidth);
+                float pixelHeight = ReadOnlyTextArea.CalcHeight(new GUIContent(_CurStatusText), pixelWidth);
                 EditorGUILayout.SelectableLabel(_CurStatusText,
-                    EditorStyles.textArea,
-                    GUILayout.ExpandHeight(true),
-                    GUILayout.MinHeight(pixelHeight), GUILayout.Width(pixelWidth));
+                    ReadOnlyTextArea,
+                    GUILayout.ExpandHeight(true), GUILayout.MinHeight(pixelHeight), GUILayout.Width(pixelWidth));
             }
             EditorGUILayout.EndScrollView();
             EditorGUILayout.Space();
