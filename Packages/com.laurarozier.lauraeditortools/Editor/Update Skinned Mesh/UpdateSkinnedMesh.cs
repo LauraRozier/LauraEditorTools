@@ -5,7 +5,7 @@ using UnityEngine;
 namespace LauraEditor.Tools.Editor {
     public class UpdateSkinnedMesh : EditorWindow
     {
-        private const string CStatusText_Waiting = "Waiting...";
+        private const string CStatusText_Ready = "Ready...";
         private const string CStatusText_Incomplete = "Add a target SkinnedMeshRenderer and a root bone to process.";
         private const string CStatusText_Processing = "== Processing bones ==";
         private static readonly string CStatusText_Processing_W_DeletedBones = System.Environment.NewLine + "WARN: Do not delete the old bones before the skinned mesh is processed!";
@@ -14,81 +14,104 @@ namespace LauraEditor.Tools.Editor {
         private static readonly string CStatusText_Processing_I_Done = System.Environment.NewLine + "Done! Missing bones: {0}";
         private static readonly string CStatusText_Processing_I_NewRoot = System.Environment.NewLine + "· Setting {0} as root bone.";
 
-        private readonly GUIContent _StatusContent = new GUIContent(CStatusText_Waiting);
         private SkinnedMeshRenderer _TargetSkin;
         private Transform _RootBone;
         private bool _IncludeInactive = true;
-        private string _CurStatusText = CStatusText_Waiting;
+        private string _CurStatusText = CStatusText_Ready;
+        private Vector2 _ScrollPosition = Vector2.zero;
+        private bool _OldEnabled = false;
 
         [MenuItem("Tools/LauraRozier/Update Skinned Mesh")]
-        public static void ShowWindow() =>
+        public static void ShowWindow() {
             GetWindow<UpdateSkinnedMesh>(true, "Update Skinned Mesh", true);
+        }
 
         private void OnGUI()
         {
-            _TargetSkin = EditorGUILayout.ObjectField("Target SkinnedMeshRenderer", _TargetSkin, typeof(SkinnedMeshRenderer), true) as SkinnedMeshRenderer;
+            EditorGUILayout.Space();
+            _TargetSkin = EditorGUILayout.ObjectField("Target Mesh", _TargetSkin, typeof(SkinnedMeshRenderer), true) as SkinnedMeshRenderer;
+            EditorGUILayout.Space();
             _RootBone = EditorGUILayout.ObjectField("New Root Bone", _RootBone, typeof(Transform), true) as Transform;
+            EditorGUILayout.Space();
             _IncludeInactive = EditorGUILayout.Toggle("Include Inactive Bones", _IncludeInactive);
-            GUI.enabled = _TargetSkin != null && _RootBone != null;
+            EditorGUILayout.Space(12f);
+            bool enabled = _TargetSkin != null && _RootBone != null;
 
-            if (!GUI.enabled)
+            if (!enabled)
                 _CurStatusText = CStatusText_Incomplete;
 
-            if (GUILayout.Button("Update Skinned Mesh Renderer")) {
-                _CurStatusText = CStatusText_Processing;
+            if (enabled && !_OldEnabled)
+                _CurStatusText = CStatusText_Ready;
 
-                // Look for root bone
-                string rootName = string.Empty;
+            EditorGUI.BeginDisabledGroup(!enabled);
+            {
+                if (GUILayout.Button("Update Skinned Mesh Renderer")) {
+                    _CurStatusText = CStatusText_Processing;
 
-                if (_TargetSkin.rootBone != null)
-                    rootName = _TargetSkin.rootBone.name;
+                    // Look for root bone
+                    string rootName = string.Empty;
 
-                Transform newRoot = null;
-                // Reassign new bones
-                Transform[] newBones = new Transform[_TargetSkin.bones.Length];
-                Transform[] existingBones = _RootBone.GetComponentsInChildren<Transform>(_IncludeInactive);
-                int missingBones = 0;
+                    if (_TargetSkin.rootBone != null)
+                        rootName = _TargetSkin.rootBone.name;
 
-                for (int i = 0; i < _TargetSkin.bones.Length; i++) {
-                    if (_TargetSkin.bones[i] == null) {
-                        _CurStatusText += CStatusText_Processing_W_DeletedBones;
-                        missingBones++;
-                        continue;
-                    }
+                    Transform newRoot = null;
+                    // Reassign new bones
+                    Transform[] newBones = new Transform[_TargetSkin.bones.Length];
+                    Transform[] existingBones = _RootBone.GetComponentsInChildren<Transform>(_IncludeInactive);
+                    int missingBones = 0;
 
-                    string boneName = _TargetSkin.bones[i].name;
-                    bool found = false;
+                    for (int i = 0; i < _TargetSkin.bones.Length; i++) {
+                        if (_TargetSkin.bones[i] == null) {
+                            _CurStatusText += CStatusText_Processing_W_DeletedBones;
+                            missingBones++;
+                            continue;
+                        }
 
-                    foreach (var newBone in existingBones) {
-                        if (newBone.name == rootName)
-                            newRoot = newBone;
+                        string boneName = _TargetSkin.bones[i].name;
+                        bool found = false;
 
-                        if (newBone.name == boneName) {
-                            _CurStatusText += string.Format(CStatusText_Processing_I_Found, newBone.name);
-                            newBones[i] = newBone;
-                            found = true;
+                        foreach (var newBone in existingBones) {
+                            if (newBone.name == rootName)
+                                newRoot = newBone;
+
+                            if (newBone.name == boneName) {
+                                _CurStatusText += string.Format(CStatusText_Processing_I_Found, newBone.name);
+                                newBones[i] = newBone;
+                                found = true;
+                            }
+                        }
+
+                        if (!found) {
+                            _CurStatusText += string.Format(CStatusText_Processing_I_Missing, boneName);
+                            missingBones++;
                         }
                     }
 
-                    if (!found) {
-                        _CurStatusText += string.Format(CStatusText_Processing_I_Missing, boneName);
-                        missingBones++;
+                    _TargetSkin.bones = newBones;
+                    _CurStatusText += string.Format(CStatusText_Processing_I_Done, missingBones);
+
+                    if (newRoot != null) {
+                        _CurStatusText += string.Format(CStatusText_Processing_I_NewRoot, rootName);
+                        _TargetSkin.rootBone = newRoot;
                     }
                 }
-
-                _TargetSkin.bones = newBones;
-                _CurStatusText += string.Format(CStatusText_Processing_I_Done, missingBones);
-
-                if (newRoot != null) {
-                    _CurStatusText += string.Format(CStatusText_Processing_I_NewRoot, rootName);
-                    _TargetSkin.rootBone = newRoot;
-                }
             }
+            EditorGUI.EndDisabledGroup();
 
-            // Draw status because yeh why not?
-            _StatusContent.text = _CurStatusText;
-            EditorStyles.label.wordWrap = true;
-            GUILayout.Label(_StatusContent);
+            EditorGUILayout.Space(12f);
+
+            _ScrollPosition = EditorGUILayout.BeginScrollView(_ScrollPosition, true, true);
+            {// Update the width on repaint, based on width of the SelectableLabel's rectangle.
+                float pixelWidth = position.width - 19f;
+                float pixelHeight = EditorStyles.textArea.CalcHeight(new GUIContent(_CurStatusText), pixelWidth);
+                EditorGUILayout.SelectableLabel(_CurStatusText,
+                    EditorStyles.textArea,
+                    GUILayout.ExpandHeight(true),
+                    GUILayout.MinHeight(pixelHeight), GUILayout.Width(pixelWidth));
+            }
+            EditorGUILayout.EndScrollView();
+            EditorGUILayout.Space();
+            _OldEnabled = enabled;
         }
     }
 }
