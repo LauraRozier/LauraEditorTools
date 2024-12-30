@@ -71,6 +71,7 @@ namespace LauraEditor.Tools.Editor {
                 byte[] bytes = image.EncodeToPNG();
                 DestroyImmediate(image);
                 File.WriteAllBytes(_fileName, bytes);
+                AssetDatabase.Refresh();
             }
         }
     }
